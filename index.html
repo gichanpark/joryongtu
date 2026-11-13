@@ -178,7 +178,7 @@ const store = {
 };
 let token = store.get('bw_session'), user = null;
 
-let cheat = false, fourTaps = 0, wasMyTurn = false;
+let cheat = false, fourTaps = 0, lastTap = 0, wasMyTurn = false;
 let mode = 'online', room = null, state = null, selected = null, busy = false, seq = 0, timer = null, lastHist = -1;
 
 async function rpc(fn, args){
@@ -314,10 +314,10 @@ function apply(s){
     btn.textContent = t; btn.disabled = !has || !s.my_turn || busy;
     btn.setAttribute('aria-label', `${t} ${colorName(color(t))}`);
     btn.onclick = () => {
-      // 치트: 4를 10번 누르면 상대 패 공개 (온라인은 서버가 정한 기한까지만 동작)
-      fourTaps = t === 4 ? fourTaps + 1 : 0;
+      // 치트: 같은 타일을 연속 5번 누르면 상대 패 공개 (온라인은 서버가 정한 기한까지만 동작)
+      fourTaps = t === lastTap ? fourTaps + 1 : 1; lastTap = t;
       selected = selected === t ? null : t;
-      if (fourTaps >= 10 && !cheat) {
+      if (fourTaps >= 5 && !cheat) {
         fourTaps = 0;
         if (mode === 'ai') { cheat = true; state = aiView(); toast('치트 발동 — 상대 패가 보입니다'); }
         else rpc('bw_cheat', {p_code: room, p_token: token}).then(st => { if (room) { if (st.my_cheat) toast('치트 발동 — 상대 패가 보입니다'); apply(st); } }).catch(() => {});
