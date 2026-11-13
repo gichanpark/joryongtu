@@ -64,6 +64,11 @@
   #toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);background:#0f141b;border:1px solid var(--accent);color:var(--text);padding:10px 16px;border-radius:999px;font-weight:700;font-size:15px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90%;text-align:center;z-index:5}
   #toast.show{opacity:1}
   .big{font-size:26px;font-weight:800;text-align:center;margin:4px 0}
+  .tab{opacity:.55}
+  .tab.on{opacity:1;border-color:var(--accent);border-width:2px}
+  .urow{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .urow .st{font-size:12px;color:var(--dim)}
+  .urow button{font-size:13px;padding:8px 10px}
   #turn{text-align:center;font-weight:800;font-size:19px;padding:11px;border-radius:12px;border:2px dashed var(--line);color:var(--dim)}
   body.myturn #turn{background:var(--accent);color:#1b1b1b;border:3px solid #fff;font-size:23px;animation:pulse 1.1s ease-in-out infinite}
   body.myturn .hand{outline:3px solid var(--accent);outline-offset:7px;border-radius:12px}
@@ -76,12 +81,33 @@
 <body>
 <div id="app">
 
-  <!-- 로비 -->
-  <section id="lobby" class="stack">
+  <!-- 로그인 / 회원가입 -->
+  <section id="auth" class="stack hidden">
     <h1><b class="k">조</b>룡<b class="w">투</b></h1>
     <p class="sub">1~9 타일로 겨루는 1:1 심리전</p>
     <div class="panel stack">
-      <div><label for="name">닉네임</label><input id="name" maxlength="12" placeholder="닉네임" autocomplete="off"></div>
+      <div class="row"><button id="tabLogin" class="tab on">로그인</button><button id="tabSignup" class="tab">회원가입</button></div>
+      <div><label for="uid">아이디</label><input id="uid" maxlength="12" autocomplete="username" autocapitalize="none"></div>
+      <div><label for="upw">비밀번호</label><input id="upw" type="password" maxlength="72" autocomplete="current-password"></div>
+      <div id="upw2wrap" class="hidden"><label for="upw2">비밀번호 확인</label><input id="upw2" type="password" maxlength="72" autocomplete="new-password"></div>
+      <button class="primary" id="btnAuth">로그인</button>
+      <p class="sub" id="authNote">관리자가 승인한 계정만 로그인할 수 있어요.</p>
+    </div>
+  </section>
+
+  <!-- 관리자 -->
+  <section id="admin" class="stack hidden">
+    <div class="top"><b style="color:var(--text);font-size:18px">회원 관리</b><button id="btnAdminBack">돌아가기</button></div>
+    <div id="adminList" class="stack"></div>
+  </section>
+
+  <!-- 로비 -->
+  <section id="lobby" class="stack hidden">
+    <h1><b class="k">조</b>룡<b class="w">투</b></h1>
+    <p class="sub">1~9 타일로 겨루는 1:1 심리전</p>
+    <div class="panel stack">
+      <div class="top"><span><b id="who" style="color:var(--text);font-size:17px"></b> 님</span>
+        <span style="display:flex;gap:6px"><button id="btnAdmin" class="hidden">회원 관리</button><button id="btnLogout">로그아웃</button></span></div>
       <button class="primary" id="btnCreate">방 만들기</button>
       <button id="btnAI">AI와 혼자 하기</button>
     </div>
@@ -149,15 +175,7 @@ const store = {
   set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
   del(k){ try { localStorage.removeItem(k); } catch(e){} }
 };
-function uuid(){
-  if (crypto.randomUUID) return crypto.randomUUID();
-  const b = crypto.getRandomValues(new Uint8Array(16));
-  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
-  const h = [...b].map(x => x.toString(16).padStart(2,'0')).join('');
-  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
-}
-let token = store.get('bw_token');
-if (!token) { token = uuid(); store.set('bw_token', token); }
+let token = store.get('bw_session'), user = null;
 
 let cheat = false, fourTaps = 0, wasMyTurn = false;
 let mode = 'online', room = null, state = null, selected = null, busy = false, seq = 0, timer = null, lastHist = -1;
@@ -179,7 +197,7 @@ function toast(t){
   clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2600);
 }
 function show(id){
-  for (const s of ['lobby','waiting','game']) $(s).classList.toggle('hidden', s !== id);
+  for (const s of ['auth','admin','lobby','waiting','game']) $(s).classList.toggle('hidden', s !== id);
 }
 const color = n => n % 2 ? 'W' : 'B';
 const colorName = c => c === 'W' ? '백색' : '흑색';
@@ -195,7 +213,7 @@ function leave(){
   document.body.classList.remove('myturn', 'notmyturn'); document.title = '조룡투';
   stopPoll(); room = null; state = null; store.del('bw_room');
   history.replaceState(null, '', location.pathname);
-  show('lobby');
+  show(user ? 'lobby' : 'auth');
 }
 function startPoll(){ stopPoll(); timer = setInterval(poll, 1200); }
 function stopPoll(){ clearInterval(timer); timer = null; }
@@ -206,7 +224,8 @@ async function poll(){
     const s = await rpc('bw_state', {p_code: room, p_token: token});
     if (my === seq && room) apply(s);
   } catch(e){
-    if (/찾을 수 없|플레이어가 아니/.test(e.message)) { toast(e.message); leave(); }
+    if (/로그인이 필요/.test(e.message)) { toast('다시 로그인해 주세요'); signOut(); }
+    else if (/찾을 수 없|플레이어가 아니/.test(e.message)) { toast(e.message); leave(); }
   }
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
@@ -317,13 +336,12 @@ async function act(fn){
   busy = false;
   if (state && room) apply(state);
 }
-const myName = () => { const v = $('name').value.trim(); store.set('bw_name', v); return v; };
 
-$('btnCreate').onclick = () => act(async () => enter(await rpc('bw_create', {p_token: token, p_name: myName()})));
+$('btnCreate').onclick = () => act(async () => enter(await rpc('bw_create', {p_token: token})));
 $('btnJoin').onclick = () => act(async () => {
   const c = $('code').value.trim().toUpperCase();
   if (c.length !== 4) throw new Error('방 코드 4글자를 입력하세요');
-  enter(await rpc('bw_join', {p_code: c, p_token: token, p_name: myName()}));
+  enter(await rpc('bw_join', {p_code: c, p_token: token}));
 });
 $('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnJoin').click(); });
 $('btnPlay').onclick = () => mode === 'ai' ? aiPlay() : act(async () => {
@@ -357,7 +375,7 @@ function aiView(){
   const n = ai.hist.length;
   return {
     code:'AI', status: ai.fin ? 'finished' : 'playing', round: Math.min(n + 1, 9),
-    my_name: $('name').value.trim() || '나', opp_name: 'AI',
+    my_name: (user && user.username) || '나', opp_name: 'AI',
     my_score: ai.ms, opp_score: ai.os,
     my_turn: !ai.fin && (ai.lead === null ? ai.leader === 'me' : ai.leader === 'opp'),
     i_lead: ai.leader === 'me', lead_played: ai.lead !== null,
@@ -524,7 +542,7 @@ function aiTick(){
     later(() => { const t = aiPickFollow(color(ai.lead)); ai.opp.push(t); aiResolve(ai.lead, t); });
 }
 function aiStart(){
-  stopPoll(); store.set('bw_name', $('name').value.trim());
+  stopPoll();
   mode = 'ai'; room = null; aiGen++; cheat = false; fourTaps = 0;
   ai = {mine:[], opp:[], ms:0, os:0, leader: Math.random() < 0.5 ? 'me' : 'opp', lead:null, hist:[], fin:false};
   lastHist = -1; selected = null;
@@ -540,17 +558,94 @@ function aiPlay(){
 }
 $('btnAI').onclick = aiStart;
 
-// 시작: 저장된 닉네임·방 복구, 초대 링크 처리
-(async () => {
-  $('name').value = store.get('bw_name') || '';
+// ───── 계정 ─────
+let signupMode = false;
+function setTab(su){
+  signupMode = su;
+  $('tabLogin').classList.toggle('on', !su); $('tabSignup').classList.toggle('on', su);
+  $('upw2wrap').classList.toggle('hidden', !su);
+  $('btnAuth').textContent = su ? '가입 신청' : '로그인';
+  $('authNote').textContent = su ? '가입 신청 후 관리자가 승인하면 로그인할 수 있어요.' : '관리자가 승인한 계정만 로그인할 수 있어요.';
+}
+$('tabLogin').onclick = () => setTab(false);
+$('tabSignup').onclick = () => setTab(true);
+function renderLobby(){
+  $('who').textContent = user.username;
+  const b = $('btnAdmin'); b.classList.toggle('hidden', !user.is_admin);
+  b.textContent = '회원 관리' + (user.pending > 0 ? ` (대기 ${user.pending})` : '');
+}
+async function afterLogin(){
+  renderLobby(); show('lobby');
   const q = (new URLSearchParams(location.search).get('room') || '').toUpperCase();
   const saved = store.get('bw_room');
-  const tryCode = q || saved;
-  if (tryCode) {
-    try { enter(await rpc('bw_state', {p_code: tryCode, p_token: token})); return; } catch(e){}
-    if (saved === tryCode) store.del('bw_room');
-    if (q) { $('code').value = q; toast('닉네임을 정하고 입장을 누르세요'); }
+  if (q) { // 초대 링크: 바로 입장 시도
+    try { enter(await rpc('bw_join', {p_code: q, p_token: token})); return; }
+    catch(e){ if (!/로그인이 필요/.test(e.message)) { $('code').value = q; toast(e.message); } }
+  } else if (saved) {
+    try { enter(await rpc('bw_state', {p_code: saved, p_token: token})); return; } catch(e){ store.del('bw_room'); }
   }
+}
+function signOut(){
+  if (token) rpc('bw_logout', {p_token: token}).catch(() => {});
+  token = null; user = null; store.del('bw_session');
+  leave(); $('upw').value = ''; $('upw2').value = ''; setTab(false); show('auth');
+}
+async function login(id, pw){
+  const r = await rpc('bw_login', {p_username: id, p_password: pw});
+  token = r.token; user = r; store.set('bw_session', token);
+  $('upw').value = ''; $('upw2').value = '';
+  await afterLogin();
+}
+$('btnAuth').onclick = () => act(async () => {
+  const id = $('uid').value.trim(), pw = $('upw').value;
+  if (!id || !pw) throw new Error('아이디와 비밀번호를 입력하세요');
+  if (!signupMode) return login(id, pw);
+  if (pw !== $('upw2').value) throw new Error('비밀번호 확인이 달라요');
+  const r = await rpc('bw_signup', {p_username: id, p_password: pw});
+  if (r.status === 'approved') { toast('관리자 계정으로 가입됐어요'); return login(id, pw); }
+  $('upw').value = ''; $('upw2').value = ''; setTab(false);
+  $('authNote').textContent = '가입 신청 완료! 관리자가 승인하면 로그인할 수 있어요.';
+  toast('가입 신청 완료');
+});
+for (const id of ['upw', 'upw2']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') $('btnAuth').click(); });
+$('btnLogout').onclick = signOut;
+
+// ───── 관리자: 가입 승인 ─────
+const ST = {pending:'승인 대기', approved:'승인됨', rejected:'거절됨'};
+function renderAdmin(list){
+  const box = $('adminList'); box.textContent = '';
+  user.pending = list.filter(u => u.status === 'pending').length;
+  if (!list.length) box.textContent = '계정이 없어요';
+  for (const u of list){
+    const row = document.createElement('div'); row.className = 'panel urow';
+    const info = document.createElement('div');
+    const nm = document.createElement('b'); nm.textContent = u.username;
+    const st = document.createElement('div'); st.className = 'st';
+    st.textContent = (u.is_admin ? '관리자 · ' : '') + ST[u.status] + ' · ' + new Date(u.created_at).toLocaleDateString('ko-KR');
+    info.append(nm, st); row.appendChild(info);
+    const btns = document.createElement('div'); btns.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end';
+    const mk = (label, action, primary) => { const b = document.createElement('button'); b.textContent = label; if (primary) b.className = 'primary';
+      b.onclick = () => { if (action === 'delete' && !confirm(u.username + ' 계정을 삭제할까요?')) return;
+        act(async () => renderAdmin(await rpc('bw_admin_set', {p_token: token, p_user: u.id, p_action: action}))); };
+      btns.appendChild(b); };
+    if (!u.is_admin){
+      if (u.status !== 'approved') mk('승인', 'approve', true);
+      if (u.status !== 'rejected') mk(u.status === 'approved' ? '정지' : '거절', 'reject');
+      mk('삭제', 'delete');
+    }
+    row.appendChild(btns); box.appendChild(row);
+  }
+}
+$('btnAdmin').onclick = () => act(async () => { renderAdmin(await rpc('bw_admin_users', {p_token: token})); show('admin'); });
+$('btnAdminBack').onclick = () => { renderLobby(); show('lobby'); };
+
+// 시작: 로그인 상태 복구
+(async () => {
+  if (token) {
+    try { user = await rpc('bw_me', {p_token: token}); await afterLogin(); return; }
+    catch(e){ if (/로그인이 필요/.test(e.message)) { token = null; store.del('bw_session'); } else { toast('서버에 연결하지 못했어요'); } }
+  }
+  show('auth');
 })();
 </script>
 </body>
