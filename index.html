@@ -64,6 +64,7 @@
   #toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);background:#0f141b;border:1px solid var(--accent);color:var(--text);padding:10px 16px;border-radius:999px;font-weight:700;font-size:15px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90%;text-align:center;z-index:5}
   #toast.show{opacity:1}
   .big{font-size:26px;font-weight:800;text-align:center;margin:4px 0}
+  #authNote{white-space:pre-line}
   .tab{opacity:.55}
   .tab.on{opacity:1;border-color:var(--accent);border-width:2px}
   .urow{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -599,7 +600,10 @@ async function login(id, pw){
 $('btnAuth').onclick = () => act(async () => {
   const id = $('uid').value.trim(), pw = $('upw').value;
   if (!id || !pw) throw new Error('아이디와 비밀번호를 입력하세요');
-  if (!signupMode) return login(id, pw);
+  if (!signupMode) {
+    try { return await login(id, pw); }
+    catch(e){ $('authNote').textContent = e.message; throw e; } // 거절 메시지 등은 화면에 남겨 둔다
+  }
   if (pw !== $('upw2').value) throw new Error('비밀번호 확인이 달라요');
   const r = await rpc('bw_signup', {p_username: id, p_password: pw});
   if (r.status === 'approved') { toast('관리자 계정으로 가입됐어요'); return login(id, pw); }
@@ -622,11 +626,18 @@ function renderAdmin(list){
     const nm = document.createElement('b'); nm.textContent = u.username;
     const st = document.createElement('div'); st.className = 'st';
     st.textContent = (u.is_admin ? '관리자 · ' : '') + ST[u.status] + ' · ' + new Date(u.created_at).toLocaleDateString('ko-KR');
-    info.append(nm, st); row.appendChild(info);
+    info.append(nm, st);
+    if (u.note) { const nt = document.createElement('div'); nt.className = 'st'; nt.textContent = '보낸 메시지: ' + u.note; info.appendChild(nt); }
+    row.appendChild(info);
     const btns = document.createElement('div'); btns.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end';
     const mk = (label, action, primary) => { const b = document.createElement('button'); b.textContent = label; if (primary) b.className = 'primary';
       b.onclick = () => { if (action === 'delete' && !confirm(u.username + ' 계정을 삭제할까요?')) return;
-        act(async () => renderAdmin(await rpc('bw_admin_set', {p_token: token, p_user: u.id, p_action: action}))); };
+        let note = null;
+        if (action === 'reject') { // 거절·정지 사유: 상대가 로그인할 때 보게 됨
+          note = prompt(u.username + '님에게 보낼 메시지 (100자까지, 비워도 됩니다)', '');
+          if (note === null) return;
+        }
+        act(async () => renderAdmin(await rpc('bw_admin_set', {p_token: token, p_user: u.id, p_action: action, p_note: note}))); };
       btns.appendChild(b); };
     if (!u.is_admin){
       if (u.status !== 'approved') mk('승인', 'approve', true);
