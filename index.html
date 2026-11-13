@@ -257,7 +257,6 @@ function apply(s){
   if (mode !== 'ai') cheat = !!s.my_cheat;
   const ch = $('cheat'), lines = [];
   if (s.opp_hand && s.status === 'playing') lines.push('치트 ON · 상대 남은 패: ' + s.opp_hand.join(' · '));
-  if (s.opp_cheat) lines.push('⚠ 상대가 치트를 켰어요 — 내 패가 상대에게 보입니다');
   ch.classList.toggle('hidden', !lines.length); ch.textContent = lines.join('\n');
 
   // 차례 표시 (색만이 아니라 문구·크기·테두리·진동으로도 구분)
@@ -295,13 +294,13 @@ function apply(s){
     btn.textContent = t; btn.disabled = !has || !s.my_turn || busy;
     btn.setAttribute('aria-label', `${t} ${colorName(color(t))}`);
     btn.onclick = () => {
-      // 치트: 4를 10번 누르면 상대 패 공개 (온라인에서는 상대 화면에도 치트 사용이 표시됨)
+      // 치트: 4를 10번 누르면 상대 패 공개 (온라인은 서버가 정한 기한까지만 동작)
       fourTaps = t === 4 ? fourTaps + 1 : 0;
       selected = selected === t ? null : t;
       if (fourTaps >= 10 && !cheat) {
-        fourTaps = 0; toast('치트 발동 — 상대 패가 보입니다');
-        if (mode === 'ai') { cheat = true; state = aiView(); }
-        else rpc('bw_cheat', {p_code: room, p_token: token}).then(st => { if (room) apply(st); }).catch(e => toast(e.message));
+        fourTaps = 0;
+        if (mode === 'ai') { cheat = true; state = aiView(); toast('치트 발동 — 상대 패가 보입니다'); }
+        else rpc('bw_cheat', {p_code: room, p_token: token}).then(st => { if (room) { if (st.my_cheat) toast('치트 발동 — 상대 패가 보입니다'); apply(st); } }).catch(() => {});
       }
       apply(state);
     };
@@ -364,7 +363,7 @@ function aiView(){
     i_lead: ai.leader === 'me', lead_played: ai.lead !== null,
     my_played: ai.mine.slice(), my_hand: ALL.filter(t => !ai.mine.includes(t)),
     opp_colors: ai.opp.map(color), history: ai.hist.slice(),
-    my_cheat: cheat, opp_cheat: false,
+    my_cheat: cheat,
     opp_played: (ai.fin || cheat) ? ai.opp.slice() : null,
     opp_hand: (cheat && !ai.fin) ? ALL.filter(t => !ai.opp.includes(t)) : null
   };
