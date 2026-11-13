@@ -178,7 +178,7 @@ const store = {
 };
 let token = store.get('bw_session'), user = null;
 
-let cheat = false, fourTaps = 0, lastTap = 0, wasMyTurn = false;
+let cheat = false, fourTaps = 0, wasMyTurn = false;
 let mode = 'online', room = null, state = null, selected = null, busy = false, seq = 0, timer = null, lastHist = -1;
 
 async function rpc(fn, args){
@@ -313,17 +313,7 @@ function apply(s){
     btn.className = `tile ${color(t)}` + (has ? '' : ' used') + (selected === t ? ' sel' : '');
     btn.textContent = t; btn.disabled = !has || !s.my_turn || busy;
     btn.setAttribute('aria-label', `${t} ${colorName(color(t))}`);
-    btn.onclick = () => {
-      // 치트: 같은 타일을 연속 5번 누르면 상대 패 공개 (온라인은 서버가 정한 기한까지만 동작)
-      fourTaps = t === lastTap ? fourTaps + 1 : 1; lastTap = t;
-      selected = selected === t ? null : t;
-      if (fourTaps >= 5 && !cheat) {
-        fourTaps = 0;
-        if (mode === 'ai') { cheat = true; state = aiView(); toast('치트 발동 — 상대 패가 보입니다'); }
-        else rpc('bw_cheat', {p_code: room, p_token: token}).then(st => { if (room) { if (st.my_cheat) toast('치트 발동 — 상대 패가 보입니다'); apply(st); } }).catch(() => {});
-      }
-      apply(state);
-    };
+    btn.onclick = () => { selected = selected === t ? null : t; apply(state); };
     hand.appendChild(btn);
   }
   const bp = $('btnPlay');
@@ -351,6 +341,14 @@ $('btnPlay').onclick = () => mode === 'ai' ? aiPlay() : act(async () => {
   state = await rpc('bw_play', {p_code: room, p_token: token, p_tile: t});
 });
 $('btnRematch').onclick = () => mode === 'ai' ? aiStart() : act(async () => { state = await rpc('bw_rematch', {p_code: room, p_token: token}); });
+// 치트: 내 점수를 5번 누르면 상대 패 공개 (온라인은 서버가 정한 기한까지만 동작)
+$('myScore').onclick = () => {
+  if (!state || state.status !== 'playing' || cheat) return;
+  if (++fourTaps < 5) return;
+  fourTaps = 0;
+  if (mode === 'ai') { cheat = true; toast('치트 발동 — 상대 패가 보입니다'); apply(aiView()); }
+  else rpc('bw_cheat', {p_code: room, p_token: token}).then(st => { if (room) { if (st.my_cheat) toast('치트 발동 — 상대 패가 보입니다'); apply(st); } }).catch(() => {});
+};
 $('btnLeave1').onclick = leave;
 $('btnLeave2').onclick = () => { if (state && state.status === 'playing' && !confirm(mode === 'ai' ? '게임에서 나갈까요? 진행 중인 판은 사라져요.' : '게임에서 나갈까요? 같은 코드로 다시 들어올 수 있어요.')) return; leave(); };
 $('btnShare').onclick = async () => {
