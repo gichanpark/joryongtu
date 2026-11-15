@@ -65,6 +65,11 @@
   #toast.show{opacity:1}
   .big{font-size:26px;font-weight:800;text-align:center;margin:4px 0}
   #authNote{white-space:pre-line}
+  .av{width:44px;height:44px;flex:none;border-radius:50%;background:#1d2632;border:2px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;color:var(--text);overflow:hidden}
+  .av img{width:100%;height:100%;object-fit:cover;display:block}
+  .av.big{width:104px;height:104px;font-size:44px}
+  .rec{font-size:12px;color:var(--dim);font-weight:500}
+  .score .name{font-size:14px;color:var(--text);font-weight:700;margin-top:4px}
   .tab{opacity:.55}
   .tab.on{opacity:1;border-color:var(--accent);border-width:2px}
   .urow{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -102,13 +107,30 @@
     <div id="adminList" class="stack"></div>
   </section>
 
+  <!-- 프로필 -->
+  <section id="profile" class="stack hidden">
+    <div class="top"><b style="color:var(--text);font-size:18px">프로필 수정</b><button id="btnProfBack">돌아가기</button></div>
+    <div class="panel stack" style="align-items:center">
+      <span class="av big" id="profAv"></span>
+      <div class="row" style="width:100%"><button id="btnPickPhoto">사진 고르기</button><button id="btnDelPhoto">사진 지우기</button></div>
+      <input type="file" id="photoFile" accept="image/*" class="hidden">
+    </div>
+    <div class="panel stack">
+      <div><label>아이디 (바꿀 수 없어요)</label><div id="profId" style="font-weight:700"></div></div>
+      <div><label for="nick">닉네임 (게임에서 보이는 이름)</label><input id="nick" maxlength="12" autocomplete="off"></div>
+      <div><label>온라인 대전 전적</label><div id="profRec" style="font-weight:700"></div></div>
+      <button class="primary" id="btnProfSave">저장</button>
+    </div>
+  </section>
+
   <!-- 로비 -->
   <section id="lobby" class="stack hidden">
     <h1><b class="k">조</b>룡<b class="w">투</b></h1>
     <p class="sub">1~9 타일로 겨루는 1:1 심리전</p>
     <div class="panel stack">
-      <div class="top"><span><b id="who" style="color:var(--text);font-size:17px"></b> 님</span>
-        <span style="display:flex;gap:6px"><button id="btnAdmin" class="hidden">회원 관리</button><button id="btnLogout">로그아웃</button></span></div>
+      <div style="display:flex;align-items:center;gap:10px"><span class="av" id="whoAv"></span>
+        <span style="min-width:0"><b id="who" style="font-size:17px"></b><div class="rec" id="whoRec"></div></span></div>
+      <div class="row"><button id="btnProfile" style="font-size:14px;padding:9px">프로필 수정</button><button id="btnAdmin" class="hidden" style="font-size:14px;padding:9px">회원 관리</button><button id="btnLogout" style="font-size:14px;padding:9px">로그아웃</button></div>
       <button class="primary" id="btnCreate">방 만들기</button>
       <button id="btnAI">AI와 혼자 하기</button>
     </div>
@@ -147,9 +169,9 @@
       <button id="btnLeave2">나가기</button>
     </div>
     <div class="panel score">
-      <div><div class="name" id="oppName"></div><div class="num" id="oppScore">0</div></div>
+      <div><span class="av" id="oppAv"></span><div class="name" id="oppName"></div><div class="rec" id="oppRec"></div><div class="num" id="oppScore">0</div></div>
       <div class="mid">대</div>
-      <div><div class="name" id="myName"></div><div class="num" id="myScore">0</div></div>
+      <div><span class="av" id="myAv"></span><div class="name" id="myName"></div><div class="rec" id="myRec"></div><div class="num" id="myScore">0</div></div>
     </div>
     <div class="panel"><div class="board" id="board"></div></div>
     <div id="cheat" class="panel hidden" style="text-align:center;font-weight:700"></div>
@@ -179,6 +201,21 @@ const store = {
 let token = store.get('bw_session'), user = null;
 
 let cheat = false, fourTaps = 0, wasMyTurn = false;
+let avs = {me: null, opp: null}, avKey = null;
+// 전적 문구: 승수 + 승률(승 ÷ 전체 판수)
+function recText(r, long){
+  if (!r) return '';
+  const w = r.w || 0, l = r.l || 0, d = r.d || 0, n = w + l + d;
+  if (!n) return '전적 없음';
+  const pct = Math.round(100 * w / n);
+  return long ? `${w}승 ${l}패 ${d}무 · 승률 ${pct}%` : `${w}승 · 승률 ${pct}%`;
+}
+const userRec = () => user ? {w: user.wins, l: user.losses, d: user.draws} : null;
+function setAv(el, src, name){
+  el.textContent = '';
+  if (src && /^data:image\/(jpeg|png|webp);base64,/.test(src)) { const im = document.createElement('img'); im.alt = ''; im.src = src; el.appendChild(im); }
+  else el.textContent = [...(name || '?')][0] || '?';
+}
 let mode = 'online', room = null, state = null, selected = null, busy = false, seq = 0, timer = null, lastHist = -1;
 
 async function rpc(fn, args){
@@ -198,7 +235,7 @@ function toast(t){
   clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2600);
 }
 function show(id){
-  for (const s of ['auth','admin','lobby','waiting','game']) $(s).classList.toggle('hidden', s !== id);
+  for (const s of ['auth','admin','profile','lobby','waiting','game']) $(s).classList.toggle('hidden', s !== id);
 }
 const color = n => n % 2 ? 'W' : 'B';
 const colorName = c => c === 'W' ? '백색' : '흑색';
@@ -206,11 +243,13 @@ const colorName = c => c === 'W' ? '백색' : '흑색';
 function enter(s){
   room = s.code; store.set('bw_room', room);
   history.replaceState(null, '', '?room=' + room);
-  lastHist = -1; selected = null;
+  lastHist = -1; selected = null; avs = {me: null, opp: null}; avKey = null;
   apply(s); startPoll();
 }
 function leave(){
   mode = 'online'; ai = null; aiGen++; cheat = false; fourTaps = 0; wasMyTurn = false;
+  avs = {me: null, opp: null}; avKey = null;
+  if (user && token) rpc('bw_me', {p_token: token}).then(r => { if (user) { user = r; renderLobby(); } }).catch(() => {}); // 전적 새로고침
   document.body.classList.remove('myturn', 'notmyturn'); document.title = '조룡투';
   stopPoll(); room = null; state = null; store.del('bw_room');
   history.replaceState(null, '', location.pathname);
@@ -248,6 +287,16 @@ function apply(s){
   $('gRound').textContent = s.status === 'finished' ? '종료' : `${s.round} / 9 라운드`;
   $('oppName').textContent = s.opp_name || '상대';
   $('myName').textContent = (s.my_name || '나') + ' (나)';
+  $('oppRec').textContent = mode === 'ai' ? '컴퓨터' : recText(s.opp_rec);
+  $('myRec').textContent = recText(s.my_rec || userRec());
+  if (mode === 'ai') avs = {me: user && user.avatar, opp: null};
+  else { // 사진은 바뀌었을 때만 따로 받아 온다
+    const k = (s.my_av || '') + '|' + (s.opp_av || '');
+    if (k !== avKey) { avKey = k; const code = room;
+      rpc('bw_avatars', {p_code: room, p_token: token}).then(r => { if (room === code) { avs = r; if (state) apply(state); } }).catch(() => {}); }
+  }
+  setAv($('oppAv'), avs.opp, s.opp_name || '상대');
+  setAv($('myAv'), avs.me, s.my_name || '나');
   $('oppScore').textContent = s.opp_score;
   $('myScore').textContent = s.my_score;
 
@@ -374,7 +423,7 @@ function aiView(){
   const n = ai.hist.length;
   return {
     code:'AI', status: ai.fin ? 'finished' : 'playing', round: Math.min(n + 1, 9),
-    my_name: (user && user.username) || '나', opp_name: 'AI',
+    my_name: (user && (user.nickname || user.username)) || '나', opp_name: 'AI', my_rec: userRec(),
     my_score: ai.ms, opp_score: ai.os,
     my_turn: !ai.fin && (ai.lead === null ? ai.leader === 'me' : ai.leader === 'opp'),
     i_lead: ai.leader === 'me', lead_played: ai.lead !== null,
@@ -569,7 +618,9 @@ function setTab(su){
 $('tabLogin').onclick = () => setTab(false);
 $('tabSignup').onclick = () => setTab(true);
 function renderLobby(){
-  $('who').textContent = user.username;
+  $('who').textContent = user.nickname || user.username;
+  $('whoRec').textContent = recText(userRec(), true);
+  setAv($('whoAv'), user.avatar, user.nickname || user.username);
   const b = $('btnAdmin'); b.classList.toggle('hidden', !user.is_admin);
   b.textContent = '회원 관리' + (user.pending > 0 ? ` (대기 ${user.pending})` : '');
 }
@@ -612,6 +663,49 @@ $('btnAuth').onclick = () => act(async () => {
 for (const id of ['upw', 'upw2']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') $('btnAuth').click(); });
 $('btnLogout').onclick = signOut;
 
+// ───── 프로필 ─────
+let newAvatar; // undefined=그대로, ''=삭제, 'data:...'=새 사진
+function openProfile(){
+  newAvatar = undefined;
+  $('profId').textContent = user.username; $('nick').value = user.nickname || user.username;
+  $('profRec').textContent = recText(userRec(), true);
+  setAv($('profAv'), user.avatar, user.nickname || user.username);
+  show('profile');
+}
+$('btnProfile').onclick = openProfile;
+$('btnProfBack').onclick = () => { renderLobby(); show('lobby'); };
+$('btnPickPhoto').onclick = () => $('photoFile').click();
+$('btnDelPhoto').onclick = () => { newAvatar = ''; setAv($('profAv'), null, $('nick').value.trim() || user.username); };
+// 고른 사진을 가운데 기준 정사각형으로 잘라 128px로 줄인다
+function shrinkPhoto(file){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = () => {
+      try {
+        const S = 128, c = document.createElement('canvas'); c.width = c.height = S;
+        const m = Math.min(im.naturalWidth, im.naturalHeight);
+        const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, S, S);
+        ctx.drawImage(im, (im.naturalWidth - m) / 2, (im.naturalHeight - m) / 2, m, m, 0, 0, S, S);
+        res(c.toDataURL('image/jpeg', 0.82));
+      } catch(e){ rej(e); } finally { URL.revokeObjectURL(url); }
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); };
+    im.src = url;
+  });
+}
+$('photoFile').onchange = async e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try { newAvatar = await shrinkPhoto(f); setAv($('profAv'), newAvatar, ''); }
+  catch(err){ toast('이 사진은 쓸 수 없어요. 다른 사진으로 해보세요'); }
+};
+$('btnProfSave').onclick = () => act(async () => {
+  const nick = $('nick').value.trim();
+  if (!nick) throw new Error('닉네임을 입력하세요');
+  user = await rpc('bw_profile_set', {p_token: token, p_nickname: nick, p_avatar: newAvatar === undefined ? null : newAvatar});
+  toast('저장했어요'); renderLobby(); show('lobby');
+});
+
 // ───── 관리자: 가입 승인 ─────
 const ST = {pending:'승인 대기', approved:'승인됨', rejected:'거절됨'};
 function renderAdmin(list){
@@ -621,9 +715,9 @@ function renderAdmin(list){
   for (const u of list){
     const row = document.createElement('div'); row.className = 'panel urow';
     const info = document.createElement('div');
-    const nm = document.createElement('b'); nm.textContent = u.username;
+    const nm = document.createElement('b'); nm.textContent = u.username + (u.nickname && u.nickname !== u.username ? ` (${u.nickname})` : '');
     const st = document.createElement('div'); st.className = 'st';
-    st.textContent = (u.is_admin ? '관리자 · ' : '') + ST[u.status] + ' · ' + new Date(u.created_at).toLocaleDateString('ko-KR');
+    st.textContent = (u.is_admin ? '관리자 · ' : '') + ST[u.status] + ' · ' + new Date(u.created_at).toLocaleDateString('ko-KR') + (u.wins + u.losses + u.draws ? ' · ' + recText({w: u.wins, l: u.losses, d: u.draws}, true) : '');
     info.append(nm, st);
     if (u.note) { const nt = document.createElement('div'); nt.className = 'st'; nt.textContent = '보낸 메시지: ' + u.note; info.appendChild(nt); }
     row.appendChild(info);
