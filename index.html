@@ -144,7 +144,7 @@
         <span style="min-width:0"><b id="who" style="font-size:17px"></b><div class="rec" id="whoRec"></div></span></div>
       <div class="row"><button id="btnProfile" style="font-size:14px;padding:9px">프로필 수정</button><button id="btnAdmin" class="hidden" style="font-size:14px;padding:9px">회원 관리</button><button id="btnLogout" style="font-size:14px;padding:9px">로그아웃</button></div>
       <button class="primary" id="btnCreate">방 만들기</button>
-      <button id="btnTour">4인 토너먼트 만들기</button>
+      <div class="row"><button id="btnTour4">4인 토너먼트</button><button id="btnTour8">8강 토너먼트</button></div>
       <button id="btnAI">AI와 혼자 하기</button>
     </div>
     <div class="panel stack">
@@ -194,7 +194,21 @@
     <div class="panel" style="text-align:center"><div class="big" id="tourTitle" style="font-size:20px"></div><p class="sub" id="tourSub"></p></div>
     <div id="tourBody" class="stack"></div>
     <button class="primary hidden" id="btnTourGo">내 경기로 들어가기</button>
+    <button class="primary hidden" id="btnTourFill">빈 자리 봇으로 채우고 시작</button>
     <button class="hidden" id="btnTourShare">초대 링크 보내기</button>
+  </section>
+
+  <!-- 관전 -->
+  <section id="watch" class="stack hidden">
+    <div class="top"><span>관전 · <span id="watchRound"></span></span><button id="btnWatchBack">대진표로</button></div>
+    <div class="panel score">
+      <div><div class="name" id="wA"></div><div class="num" id="wAs">0</div></div>
+      <div class="mid">대</div>
+      <div><div class="name" id="wB"></div><div class="num" id="wBs">0</div></div>
+    </div>
+    <div class="panel"><div class="board" id="watchBoard"></div></div>
+    <div id="watchMsg" class="big" style="font-size:18px" aria-live="polite"></div>
+    <p class="sub">진행 중에는 색과 승패만 보여요. 숫자는 경기가 끝나면 공개됩니다.</p>
   </section>
 
   <!-- 게임 -->
@@ -252,6 +266,7 @@ function setAv(el, src, name){
   if (src && /^data:image\/(jpeg|png|webp);base64,/.test(src)) { const im = document.createElement('img'); im.alt = ''; im.src = src; el.appendChild(im); }
   else el.textContent = [...(name || '?')][0] || '?';
 }
+let watch = null;
 let tour = null, tourState = null, dismissedGame = null, joining = false, tossShown = null, tossAnimating = false, lastStatus = null;
 let mode = 'online', room = null, state = null, selected = null, busy = false, seq = 0, timer = null, lastHist = -1;
 
@@ -272,7 +287,7 @@ function toast(t){
   clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2600);
 }
 function show(id){
-  for (const s of ['auth','admin','profile','lobby','waiting','toss','tour','game']) $(s).classList.toggle('hidden', s !== id);
+  for (const s of ['auth','admin','profile','lobby','waiting','toss','tour','watch','game']) $(s).classList.toggle('hidden', s !== id);
 }
 const color = n => n % 2 ? 'W' : 'B';
 const colorName = c => c === 'W' ? '백색' : '흑색';
@@ -289,7 +304,7 @@ function leave(){
   avs = {me: null, opp: null}; avKey = null;
   if (user && token) rpc('bw_me', {p_token: token}).then(r => { if (user) { user = r; renderLobby(); } }).catch(() => {}); // 전적 새로고침
   document.body.classList.remove('myturn', 'notmyturn'); document.title = '조룡투';
-  room = null; state = null; store.del('bw_room');
+  room = null; state = null; watch = null; store.del('bw_room');
   if (tour && user) { // 토너먼트 경기에서 나오면 대진표로
     dismissedGame = unfinished ? wasRoom : null;
     if (tourState) renderTour(tourState);
@@ -308,6 +323,7 @@ function startPoll(){ stopPoll(); timer = setInterval(poll, 1200); }
 function stopPoll(){ clearInterval(timer); timer = null; }
 async function poll(){
   if (busy || document.hidden || (!room && !tour)) return;
+  if (!room && watch) return pollWatch();
   const my = ++seq;
   if (room) {
     try {
@@ -533,43 +549,95 @@ function applyTour(t){
   if (t.my_game && t.my_game !== dismissedGame) { joinMyGame(t.my_game); if (!$('tour').classList.contains('hidden')) renderTour(t); else { renderTour(t); show('tour'); } return; }
   renderTour(t); show('tour');
 }
+const roundNames = size => size === 8 ? ['8강 1','8강 2','8강 3','8강 4','준결승 1','준결승 2','결승'] : ['준결승 1','준결승 2','결승'];
 function renderTour(t){
   $('tourCode').textContent = t.code;
-  const n = t.players.length;
-  $('tourTitle').textContent = ({waiting: `참가자 ${n} / 4`, semis: '준결승', final: '결승', done: `우승: ${t.champion}`})[t.status] || '';
-  $('tourSub').textContent = ({waiting: '네 명이 모이면 대진을 무작위로 뽑아 바로 시작해요', semis: '두 경기의 승자가 결승에서 만나요',
-    final: '결승 진행 중', done: t.i_won ? '축하해요, 우승입니다!' : '토너먼트가 끝났어요'})[t.status] || '';
+  const n = t.players.length, names = roundNames(t.size), ms = t.matches || [];
+  let cur = ''; ms.forEach((m, i) => { if (m) cur = names[i].replace(/ \d$/, ''); });
+  $('tourTitle').textContent = ({waiting: `${t.size === 8 ? '8강' : '4인'} 토너먼트 · 참가자 ${n} / ${t.size}`, playing: cur + ' 진행 중', done: `우승: ${t.champion}`})[t.status] || '';
+  $('tourSub').textContent = ({waiting: '자리가 다 차면 대진을 무작위로 뽑아 바로 시작해요',
+    playing: (t.is_player ? '' : '관전 중 · ') + '다른 경기는 "관전"으로 볼 수 있어요',
+    done: t.i_won ? '축하해요, 우승입니다!' : '토너먼트가 끝났어요'})[t.status] || '';
   const body = $('tourBody'); body.textContent = '';
   const el = (tag, cls, txt) => { const d = document.createElement(tag); if (cls) d.className = cls; if (txt !== undefined) d.textContent = txt; return d; };
   if (t.status === 'waiting') {
-    for (let i = 0; i < 4; i++) body.appendChild(el('div', 'panel', t.players[i] ? `${i + 1}. ${t.players[i]}` : `${i + 1}. (기다리는 중)`));
+    for (let i = 0; i < t.size; i++) body.appendChild(el('div', 'panel', t.players[i] ? `${i + 1}. ${t.players[i]}` : `${i + 1}. (기다리는 중)`));
   } else {
     const ST = {toss: '코인토스 중', choose: '코인토스 중', playing: '진행 중', finished: '종료'};
-    const card = (label, m) => {
+    names.forEach((label, i) => {
+      const m = ms[i];
       const p = el('div', 'panel' + (m && m.mine ? ' mine' : ''));
       const top = el('div', 'mlabel'); top.append(el('span', '', label + (m && m.mine ? ' · 내 경기' : '')), el('span', '', !m ? '대기' : m.status === 'finished' && !m.winner ? '무승부 · 재경기' : ST[m.status] || ''));
       const row = el('div', 'match');
       const side = (name, k) => el('div', 'p' + (m && m.winner === k ? ' win' : m && m.winner ? ' out' : ''), (m && m.winner === k ? '승 ' : '') + (name || '?'));
       row.append(side(m && m.a, 'a'), el('div', 'sc', m ? `${m.sa} : ${m.sb}` : '– : –'), side(m && m.b, 'b'));
-      p.append(top, row); return p;
-    };
-    body.append(card('준결승 1', t.semi1), card('준결승 2', t.semi2), card('결승', t.final));
+      p.append(top, row);
+      if (m && !(m.mine && !m.winner)) { // 내가 지금 뛰는 경기가 아니면 볼 수 있다
+        const wb = el('button', '', m.winner ? '결과 보기' : '관전'); wb.style.cssText = 'margin-top:10px;width:100%;font-size:14px;padding:9px';
+        wb.onclick = () => startWatch(m.code); p.appendChild(wb);
+      }
+      body.appendChild(p);
+    });
   }
   $('btnTourGo').classList.toggle('hidden', !(t.my_game && t.my_game === dismissedGame));
+  $('btnTourFill').classList.toggle('hidden', !(t.status === 'waiting' && t.is_host));
   $('btnTourShare').classList.toggle('hidden', t.status !== 'waiting');
 }
-$('btnTour').onclick = () => act(async () => enterTour(await rpc('bw_tour_create', {p_token: token})));
+
+// ───── 관전 ─────
+function startWatch(code){
+  watch = code; $('watchBoard').textContent = ''; $('watchMsg').textContent = '불러오는 중…';
+  for (const id of ['wA','wB','watchRound']) $(id).textContent = ''; $('wAs').textContent = $('wBs').textContent = '0';
+  show('watch'); poll();
+}
+function stopWatch(){ watch = null; if (tourState) renderTour(tourState); show('tour'); poll(); }
+async function pollWatch(){
+  const my = ++seq, code = watch;
+  try {
+    const [v, t] = await Promise.all([rpc('bw_watch', {p_code: code, p_token: token}), rpc('bw_tour_state', {p_code: tour, p_token: token})]);
+    if (my !== seq || watch !== code || room) return;
+    tourState = t;
+    if (t.my_game && t.my_game !== dismissedGame) { watch = null; applyTour(t); return; } // 내 경기가 생기면 그쪽으로
+    applyWatch(v);
+  } catch(e){
+    if (/로그인이 필요/.test(e.message)) { toast('다시 로그인해 주세요'); signOut(); }
+    else if (watch === code) { toast(e.message); stopWatch(); }
+  }
+}
+function applyWatch(v){
+  const fin = v.status === 'finished', n = v.history.length;
+  $('wA').textContent = v.a.name; $('wB').textContent = v.b.name; $('wAs').textContent = v.a.score; $('wBs').textContent = v.b.score;
+  $('watchRound').textContent = fin ? '종료' : (v.status === 'playing' ? `${v.round} / 9 라운드` : '코인토스');
+  const b = $('watchBoard'); b.textContent = '';
+  const add = (cls, txt) => { const d = document.createElement('div'); d.className = cls; d.textContent = txt; b.appendChild(d); return d; };
+  const short = nm => [...(nm || '?')].slice(0, 3).join('');
+  add('lbl', ''); for (let i = 1; i <= 9; i++) add('rn', i);
+  const rowOf = (side) => { add('lbl', short(side.name));
+    for (let i = 0; i < 9; i++) { const c = side.colors[i]; const d = add('cell' + (c ? ' ' + c : ''), c ? (side.played ? side.played[i] : '?') : ''); if (i === n && v.status === 'playing') d.classList.add('now'); } };
+  rowOf(v.a);
+  add('lbl', '승자');
+  for (let i = 0; i < 9; i++) { const h = v.history[i]; add('res' + (h ? ' draw' : ''), h ? (h.w === 'a' ? '▲' : h.w === 'b' ? '▼' : '무') : ''); }
+  rowOf(v.b);
+  $('watchMsg').textContent = fin
+    ? (v.a.score === v.b.score ? '무승부 — 재경기 예정' : `${v.a.score > v.b.score ? v.a.name : v.b.name} 승리`)
+    : v.status === 'playing' ? `${v.turn === 'a' ? v.a.name : v.b.name} 차례` : '코인토스 중…';
+}
+$('btnWatchBack').onclick = stopWatch;
+$('btnTourFill').onclick = () => { if (!confirm('빈 자리를 봇으로 채우고 바로 시작할까요?')) return;
+  act(async () => applyTour(await rpc('bw_tour_fill', {p_code: tour, p_token: token}))); };
+$('btnTour4').onclick = () => act(async () => enterTour(await rpc('bw_tour_new', {p_token: token, p_size: 4})));
+$('btnTour8').onclick = () => act(async () => enterTour(await rpc('bw_tour_new', {p_token: token, p_size: 8})));
 $('btnTourGo').onclick = () => { dismissedGame = null; if (tourState) applyTour(tourState); };
 $('btnTourLeave').onclick = () => {
   const st = tourState && tourState.status;
   if (st === 'waiting' && tourState.is_host && !confirm('방장이 나가면 토너먼트 방이 없어져요. 나갈까요?')) return;
-  if ((st === 'semis' || st === 'final') && !confirm('토너먼트에서 나갈까요? 내 경기가 남아 있으면 상대가 기다리게 돼요.')) return;
+  if (st === 'playing' && tourState.my_game && !confirm('토너먼트에서 나갈까요? 내 경기가 남아 있어서 상대가 기다리게 돼요.')) return;
   leaveTour(false);
 };
 $('btnTourShare').onclick = async () => {
   const url = location.origin + location.pathname + '?tour=' + tour;
   try {
-    if (navigator.share) await navigator.share({title:"조룡투", text:`조룡투 4인 토너먼트! 방 코드 ${tour}`, url});
+    if (navigator.share) await navigator.share({title:"조룡투", text:`조룡투 토너먼트! 방 코드 ${tour}`, url});
     else { await navigator.clipboard.writeText(url); toast('초대 링크를 복사했어요'); }
   } catch(e){ if (e.name !== 'AbortError') toast('방 코드 ' + tour + ' 를 알려주세요'); }
 };
