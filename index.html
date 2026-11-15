@@ -65,6 +65,18 @@
   #toast.show{opacity:1}
   .big{font-size:26px;font-weight:800;text-align:center;margin:4px 0}
   #authNote{white-space:pre-line}
+  .coinbox{perspective:700px;padding:14px 0}
+  .coin{width:132px;height:132px;position:relative;margin:0 auto;transform-style:preserve-3d;transform:rotateY(0deg)}
+  .coin .f{position:absolute;inset:0;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:52px;font-weight:800;backface-visibility:hidden;-webkit-backface-visibility:hidden;box-shadow:0 6px 18px rgba(0,0,0,.45)}
+  .coin .fb{background:var(--black);color:var(--white);border:5px solid #8f9bab}
+  .coin .fw{background:var(--white);color:var(--black);border:5px solid #fff;transform:rotateY(180deg)}
+  .match{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;text-align:center}
+  .match .p{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .match .p.win{text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:4px}
+  .match .p.out{opacity:.5}
+  .match .sc{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  .mine{border:2px solid var(--accent)}
+  .mlabel{font-size:12px;color:var(--dim);margin-bottom:6px;display:flex;justify-content:space-between}
   .av{width:44px;height:44px;flex:none;border-radius:50%;background:#1d2632;border:2px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;color:var(--text);overflow:hidden}
   .av img{width:100%;height:100%;object-fit:cover;display:block}
   .av.big{width:104px;height:104px;font-size:44px}
@@ -132,6 +144,7 @@
         <span style="min-width:0"><b id="who" style="font-size:17px"></b><div class="rec" id="whoRec"></div></span></div>
       <div class="row"><button id="btnProfile" style="font-size:14px;padding:9px">프로필 수정</button><button id="btnAdmin" class="hidden" style="font-size:14px;padding:9px">회원 관리</button><button id="btnLogout" style="font-size:14px;padding:9px">로그아웃</button></div>
       <button class="primary" id="btnCreate">방 만들기</button>
+      <button id="btnTour">4인 토너먼트 만들기</button>
       <button id="btnAI">AI와 혼자 하기</button>
     </div>
     <div class="panel stack">
@@ -142,6 +155,7 @@
     <div class="panel">
       <ul class="rules">
         <li>각자 1~9 타일을 한 번씩만 쓸 수 있어요. 홀수는 백색, 짝수는 흑색.</li>
+        <li>온라인은 <b>코인토스</b>로 시작: 방장이 흑/백을 고르고, 맞히면 방장이, 틀리면 상대가 선공·후공을 정해요.</li>
         <li>선 플레이어가 먼저 내면, 상대는 <b>색만</b> 보고 타일을 냅니다.</li>
         <li>숫자가 높은 쪽이 1점. 단, <b>1은 9를 이깁니다.</b></li>
         <li>낸 숫자는 게임 중엔 공개되지 않고 승패만 알려줘요. 끝나면 전부 공개됩니다.</li>
@@ -160,6 +174,27 @@
       <button class="primary" id="btnShare">초대 링크 보내기</button>
       <button id="btnLeave1">나가기</button>
     </div>
+  </section>
+
+  <!-- 코인토스 -->
+  <section id="toss" class="stack hidden">
+    <div class="top"><span>코인토스 · <span id="tossVs"></span></span><button id="btnLeaveToss">나가기</button></div>
+    <div class="panel stack" style="text-align:center">
+      <div class="coinbox"><div class="coin" id="coin"><div class="f fb">흑</div><div class="f fw">백</div></div></div>
+      <div class="big" id="tossMsg" aria-live="polite"></div>
+      <p class="sub" id="tossSub"></p>
+      <div class="row hidden" id="tossPick"><button id="btnPickB" class="tile B" style="aspect-ratio:auto;padding:16px;font-size:22px">흑</button><button id="btnPickW" class="tile W" style="aspect-ratio:auto;padding:16px;font-size:22px">백</button></div>
+      <div class="row hidden" id="tossChoose"><button class="primary" id="btnFirst">선공 (먼저 내기)</button><button class="primary" id="btnSecond">후공 (색 보고 내기)</button></div>
+    </div>
+  </section>
+
+  <!-- 토너먼트 -->
+  <section id="tour" class="stack hidden">
+    <div class="top"><span>토너먼트 <span class="code" id="tourCode"></span></span><button id="btnTourLeave">나가기</button></div>
+    <div class="panel" style="text-align:center"><div class="big" id="tourTitle" style="font-size:20px"></div><p class="sub" id="tourSub"></p></div>
+    <div id="tourBody" class="stack"></div>
+    <button class="primary hidden" id="btnTourGo">내 경기로 들어가기</button>
+    <button class="hidden" id="btnTourShare">초대 링크 보내기</button>
   </section>
 
   <!-- 게임 -->
@@ -183,6 +218,7 @@
     </div>
     <div id="endArea" class="stack hidden">
       <button class="primary" id="btnRematch">한 판 더</button>
+      <button class="primary hidden" id="btnBracket">대진표 보기</button>
     </div>
   </section>
 </div>
@@ -216,6 +252,7 @@ function setAv(el, src, name){
   if (src && /^data:image\/(jpeg|png|webp);base64,/.test(src)) { const im = document.createElement('img'); im.alt = ''; im.src = src; el.appendChild(im); }
   else el.textContent = [...(name || '?')][0] || '?';
 }
+let tour = null, tourState = null, dismissedGame = null, joining = false, tossShown = null, tossAnimating = false, lastStatus = null;
 let mode = 'online', room = null, state = null, selected = null, busy = false, seq = 0, timer = null, lastHist = -1;
 
 async function rpc(fn, args){
@@ -235,37 +272,59 @@ function toast(t){
   clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2600);
 }
 function show(id){
-  for (const s of ['auth','admin','profile','lobby','waiting','game']) $(s).classList.toggle('hidden', s !== id);
+  for (const s of ['auth','admin','profile','lobby','waiting','toss','tour','game']) $(s).classList.toggle('hidden', s !== id);
 }
 const color = n => n % 2 ? 'W' : 'B';
 const colorName = c => c === 'W' ? '백색' : '흑색';
 
 function enter(s){
-  room = s.code; store.set('bw_room', room);
-  history.replaceState(null, '', '?room=' + room);
+  room = s.code; lastStatus = null;
+  if (!tour) { store.set('bw_room', room); history.replaceState(null, '', '?room=' + room); }
   lastHist = -1; selected = null; avs = {me: null, opp: null}; avKey = null;
   apply(s); startPoll();
 }
 function leave(){
+  const wasRoom = room, unfinished = state && state.status !== 'finished';
   mode = 'online'; ai = null; aiGen++; cheat = false; fourTaps = 0; wasMyTurn = false;
   avs = {me: null, opp: null}; avKey = null;
   if (user && token) rpc('bw_me', {p_token: token}).then(r => { if (user) { user = r; renderLobby(); } }).catch(() => {}); // 전적 새로고침
   document.body.classList.remove('myturn', 'notmyturn'); document.title = '조룡투';
-  stopPoll(); room = null; state = null; store.del('bw_room');
+  room = null; state = null; store.del('bw_room');
+  if (tour && user) { // 토너먼트 경기에서 나오면 대진표로
+    dismissedGame = unfinished ? wasRoom : null;
+    if (tourState) renderTour(tourState);
+    show('tour'); startPoll(); poll(); return;
+  }
+  stopPoll();
   history.replaceState(null, '', location.pathname);
   show(user ? 'lobby' : 'auth');
+}
+function leaveTour(silent){
+  if (tour && !silent && tourState && tourState.status === 'waiting') rpc('bw_tour_leave', {p_code: tour, p_token: token}).catch(() => {});
+  tour = null; tourState = null; dismissedGame = null; store.del('bw_tour');
+  leave();
 }
 function startPoll(){ stopPoll(); timer = setInterval(poll, 1200); }
 function stopPoll(){ clearInterval(timer); timer = null; }
 async function poll(){
-  if (!room || busy || document.hidden) return;
+  if (busy || document.hidden || (!room && !tour)) return;
   const my = ++seq;
-  try {
-    const s = await rpc('bw_state', {p_code: room, p_token: token});
-    if (my === seq && room) apply(s);
-  } catch(e){
-    if (/로그인이 필요/.test(e.message)) { toast('다시 로그인해 주세요'); signOut(); }
-    else if (/찾을 수 없|플레이어가 아니/.test(e.message)) { toast(e.message); leave(); }
+  if (room) {
+    try {
+      const s = await rpc('bw_state', {p_code: room, p_token: token});
+      if (my === seq && room) apply(s);
+    } catch(e){
+      if (/로그인이 필요/.test(e.message)) { toast('다시 로그인해 주세요'); signOut(); }
+      else if (/찾을 수 없|플레이어가 아니/.test(e.message)) { toast(e.message); leave(); }
+    }
+  } else {
+    try {
+      const t = await rpc('bw_tour_state', {p_code: tour, p_token: token});
+      if (my === seq && tour && !room) applyTour(t);
+    } catch(e){
+      if (/로그인이 필요/.test(e.message)) { toast('다시 로그인해 주세요'); signOut(); }
+      else if (/찾을 수 없|플레이어가 아니/.test(e.message)) { toast('토너먼트 방이 없어졌어요'); leaveTour(true); }
+    }
   }
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
@@ -273,6 +332,9 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) poll
 function apply(s){
   state = s;
   if (s.status === 'waiting') { $('waitCode').textContent = s.code; show('waiting'); return; }
+  if (s.status === 'toss' || s.status === 'choose') { lastStatus = s.status; renderToss(s); return; }
+  if (lastStatus === 'choose' && s.status === 'playing') toast(s.i_lead ? '내가 선공이에요!' : '상대가 선공이에요!');
+  lastStatus = s.status;
   show('game');
 
   const n = s.history.length;
@@ -283,7 +345,7 @@ function apply(s){
   if (lastHist > n) selected = null; // 재대결로 초기화됨
   lastHist = n;
 
-  $('gCode').textContent = mode === 'ai' ? 'AI 대전' : '방 ' + s.code;
+  $('gCode').textContent = mode === 'ai' ? 'AI 대전' : s.tour ? '토너먼트' : '방 ' + s.code;
   $('gRound').textContent = s.status === 'finished' ? '종료' : `${s.round} / 9 라운드`;
   $('oppName').textContent = s.opp_name || '상대';
   $('myName').textContent = (s.my_name || '나') + ' (나)';
@@ -352,6 +414,10 @@ function apply(s){
 
   $('playArea').classList.toggle('hidden', fin);
   $('endArea').classList.toggle('hidden', !fin);
+  const tie = s.my_score === s.opp_score; // 토너먼트는 무승부일 때만 재경기
+  $('btnRematch').classList.toggle('hidden', !!s.tour && !tie);
+  $('btnRematch').textContent = s.tour ? '무승부 — 재경기' : '한 판 더';
+  $('btnBracket').classList.toggle('hidden', !s.tour);
 
   // 손패
   if (selected && !s.my_hand.includes(selected)) selected = null;
@@ -381,7 +447,13 @@ $('btnCreate').onclick = () => act(async () => enter(await rpc('bw_create', {p_t
 $('btnJoin').onclick = () => act(async () => {
   const c = $('code').value.trim().toUpperCase();
   if (c.length !== 4) throw new Error('방 코드 4글자를 입력하세요');
-  enter(await rpc('bw_join', {p_code: c, p_token: token}));
+  let g;
+  try { g = await rpc('bw_join', {p_code: c, p_token: token}); }
+  catch(e){ // 일반 방이 아니면 토너먼트 코드인지 확인
+    if (!/찾을 수 없/.test(e.message)) throw e;
+    return enterTour(await rpc('bw_tour_join', {p_code: c, p_token: token}));
+  }
+  enter(g);
 });
 $('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnJoin').click(); });
 $('btnPlay').onclick = () => mode === 'ai' ? aiPlay() : act(async () => {
@@ -399,6 +471,108 @@ $('myScore').onclick = () => {
   else rpc('bw_cheat', {p_code: room, p_token: token}).then(st => { if (room) { if (st.my_cheat) toast('치트 발동 — 상대 패가 보입니다'); apply(st); } }).catch(() => {});
 };
 $('btnLeave1').onclick = leave;
+$('btnLeaveToss').onclick = () => { if (!confirm('나갈까요? 같은 방으로 다시 들어올 수 있어요.')) return; leave(); };
+$('btnBracket').onclick = leave;
+
+// ───── 코인토스 ─────
+function flipCoin(result){
+  const coin = $('coin');
+  coin.style.transition = 'none'; coin.style.transform = 'rotateY(0deg)';
+  void coin.offsetWidth; // 다시 그리게 해서 애니메이션이 처음부터 돌도록
+  coin.style.transition = 'transform 2.2s cubic-bezier(.15,.6,.25,1)';
+  coin.style.transform = `rotateY(${1800 + (result === 'W' ? 180 : 0)}deg)`;
+}
+function renderToss(s){
+  show('toss');
+  document.body.classList.remove('myturn', 'notmyturn'); document.title = '조룡투';
+  $('tossVs').textContent = `${s.my_name || '나'} vs ${s.opp_name || '상대'}`;
+  const cn = c => c === 'B' ? '흑' : '백';
+  let msg, sub, pick = false, choose = false;
+  if (s.status === 'toss') {
+    tossAnimating = false;
+    $('coin').style.transition = 'none'; $('coin').style.transform = 'rotateY(0deg)';
+    if (s.host) { msg = '흑 또는 백을 고르세요'; sub = '코인이 고른 색으로 나오면 내가 선공·후공을 정해요'; pick = true; }
+    else { msg = '방장이 흑/백을 고르는 중…'; sub = '방장이 맞히면 방장이, 틀리면 내가 선공·후공을 정해요'; }
+  } else {
+    const key = s.code + ':' + s.toss_seq;
+    if (tossShown !== key) { // 이번 토스를 처음 봤을 때 한 번만 코인을 던진다
+      tossShown = key; tossAnimating = true; flipCoin(s.toss_result);
+      const code = s.code;
+      setTimeout(() => { tossAnimating = false; if (room === code && state && state.status === 'choose') renderToss(state); }, 2400);
+    }
+    if (tossAnimating) { msg = '코인을 던지는 중…'; sub = `방장의 선택: ${cn(s.toss_pick)}`; }
+    else {
+      msg = `${cn(s.toss_result)}! ` + (s.toss_won ? '내가 정해요' : '상대가 정해요');
+      sub = `방장의 선택: ${cn(s.toss_pick)} · ` + (s.toss_won ? '후공은 상대 타일의 색을 보고 낼 수 있어요' : '상대가 선공·후공을 고르는 중…');
+      choose = !!s.toss_won;
+    }
+  }
+  $('tossMsg').textContent = msg; $('tossSub').textContent = sub;
+  $('tossPick').classList.toggle('hidden', !pick); $('tossChoose').classList.toggle('hidden', !choose);
+}
+const tossAct = (fn, args) => act(async () => { state = await rpc(fn, {p_code: room, p_token: token, ...args}); });
+$('btnPickB').onclick = () => tossAct('bw_toss', {p_pick: 'B'});
+$('btnPickW').onclick = () => tossAct('bw_toss', {p_pick: 'W'});
+$('btnFirst').onclick = () => tossAct('bw_choose', {p_first: true});
+$('btnSecond').onclick = () => tossAct('bw_choose', {p_first: false});
+
+// ───── 4인 토너먼트 ─────
+function enterTour(t){
+  tour = t.code; dismissedGame = null; store.set('bw_tour', tour); store.del('bw_room');
+  history.replaceState(null, '', '?tour=' + tour);
+  applyTour(t); startPoll();
+}
+async function joinMyGame(code){
+  if (joining) return; joining = true;
+  try { const g = await rpc('bw_state', {p_code: code, p_token: token}); if (tour && !room) enter(g); } catch(e){}
+  joining = false;
+}
+function applyTour(t){
+  tourState = t;
+  if (room) return;
+  if (t.my_game && t.my_game !== dismissedGame) { joinMyGame(t.my_game); if (!$('tour').classList.contains('hidden')) renderTour(t); else { renderTour(t); show('tour'); } return; }
+  renderTour(t); show('tour');
+}
+function renderTour(t){
+  $('tourCode').textContent = t.code;
+  const n = t.players.length;
+  $('tourTitle').textContent = ({waiting: `참가자 ${n} / 4`, semis: '준결승', final: '결승', done: `우승: ${t.champion}`})[t.status] || '';
+  $('tourSub').textContent = ({waiting: '네 명이 모이면 대진을 무작위로 뽑아 바로 시작해요', semis: '두 경기의 승자가 결승에서 만나요',
+    final: '결승 진행 중', done: t.i_won ? '축하해요, 우승입니다!' : '토너먼트가 끝났어요'})[t.status] || '';
+  const body = $('tourBody'); body.textContent = '';
+  const el = (tag, cls, txt) => { const d = document.createElement(tag); if (cls) d.className = cls; if (txt !== undefined) d.textContent = txt; return d; };
+  if (t.status === 'waiting') {
+    for (let i = 0; i < 4; i++) body.appendChild(el('div', 'panel', t.players[i] ? `${i + 1}. ${t.players[i]}` : `${i + 1}. (기다리는 중)`));
+  } else {
+    const ST = {toss: '코인토스 중', choose: '코인토스 중', playing: '진행 중', finished: '종료'};
+    const card = (label, m) => {
+      const p = el('div', 'panel' + (m && m.mine ? ' mine' : ''));
+      const top = el('div', 'mlabel'); top.append(el('span', '', label + (m && m.mine ? ' · 내 경기' : '')), el('span', '', !m ? '대기' : m.status === 'finished' && !m.winner ? '무승부 · 재경기' : ST[m.status] || ''));
+      const row = el('div', 'match');
+      const side = (name, k) => el('div', 'p' + (m && m.winner === k ? ' win' : m && m.winner ? ' out' : ''), (m && m.winner === k ? '승 ' : '') + (name || '?'));
+      row.append(side(m && m.a, 'a'), el('div', 'sc', m ? `${m.sa} : ${m.sb}` : '– : –'), side(m && m.b, 'b'));
+      p.append(top, row); return p;
+    };
+    body.append(card('준결승 1', t.semi1), card('준결승 2', t.semi2), card('결승', t.final));
+  }
+  $('btnTourGo').classList.toggle('hidden', !(t.my_game && t.my_game === dismissedGame));
+  $('btnTourShare').classList.toggle('hidden', t.status !== 'waiting');
+}
+$('btnTour').onclick = () => act(async () => enterTour(await rpc('bw_tour_create', {p_token: token})));
+$('btnTourGo').onclick = () => { dismissedGame = null; if (tourState) applyTour(tourState); };
+$('btnTourLeave').onclick = () => {
+  const st = tourState && tourState.status;
+  if (st === 'waiting' && tourState.is_host && !confirm('방장이 나가면 토너먼트 방이 없어져요. 나갈까요?')) return;
+  if ((st === 'semis' || st === 'final') && !confirm('토너먼트에서 나갈까요? 내 경기가 남아 있으면 상대가 기다리게 돼요.')) return;
+  leaveTour(false);
+};
+$('btnTourShare').onclick = async () => {
+  const url = location.origin + location.pathname + '?tour=' + tour;
+  try {
+    if (navigator.share) await navigator.share({title:"조룡투", text:`조룡투 4인 토너먼트! 방 코드 ${tour}`, url});
+    else { await navigator.clipboard.writeText(url); toast('초대 링크를 복사했어요'); }
+  } catch(e){ if (e.name !== 'AbortError') toast('방 코드 ' + tour + ' 를 알려주세요'); }
+};
 $('btnLeave2').onclick = () => { if (state && state.status === 'playing' && !confirm(mode === 'ai' ? '게임에서 나갈까요? 진행 중인 판은 사라져요.' : '게임에서 나갈까요? 같은 코드로 다시 들어올 수 있어요.')) return; leave(); };
 $('btnShare').onclick = async () => {
   const url = location.origin + location.pathname + '?room=' + room;
@@ -626,8 +800,13 @@ function renderLobby(){
 }
 async function afterLogin(){
   renderLobby(); show('lobby');
-  const q = (new URLSearchParams(location.search).get('room') || '').toUpperCase();
-  const saved = store.get('bw_room');
+  const qs = new URLSearchParams(location.search);
+  const q = (qs.get('room') || '').toUpperCase(), qt = (qs.get('tour') || '').toUpperCase();
+  const saved = store.get('bw_room'), savedTour = store.get('bw_tour');
+  if (qt || (!q && savedTour)) { // 토너먼트 초대 링크 또는 하던 토너먼트 복구
+    try { enterTour(await rpc(qt ? 'bw_tour_join' : 'bw_tour_state', {p_code: qt || savedTour, p_token: token})); return; }
+    catch(e){ if (qt) { if (!/로그인이 필요/.test(e.message)) toast(e.message); } else store.del('bw_tour'); }
+  }
   if (q) { // 초대 링크: 바로 입장 시도
     try { enter(await rpc('bw_join', {p_code: q, p_token: token})); return; }
     catch(e){ if (!/로그인이 필요/.test(e.message)) { $('code').value = q; toast(e.message); } }
@@ -638,6 +817,7 @@ async function afterLogin(){
 function signOut(){
   if (token) rpc('bw_logout', {p_token: token}).catch(() => {});
   token = null; user = null; store.del('bw_session');
+  tour = null; tourState = null; store.del('bw_tour');
   leave(); $('upw').value = ''; $('upw2').value = ''; setTab(false); show('auth');
 }
 async function login(id, pw){
