@@ -720,7 +720,9 @@ function renderAdmin(list){
     st.textContent = (u.is_admin ? '관리자 · ' : '') + ST[u.status] + ' · ' + new Date(u.created_at).toLocaleDateString('ko-KR') + (u.wins + u.losses + u.draws ? ' · ' + recText({w: u.wins, l: u.losses, d: u.draws}, true) : '');
     info.append(nm, st);
     if (u.note) { const nt = document.createElement('div'); nt.className = 'st'; nt.textContent = '보낸 메시지: ' + u.note; info.appendChild(nt); }
-    row.appendChild(info);
+    const left = document.createElement('div'); left.style.cssText = 'display:flex;align-items:center;gap:10px;min-width:0';
+    const av = document.createElement('span'); av.className = 'av'; setAv(av, u.avatar, u.nickname || u.username);
+    info.style.minWidth = '0'; left.append(av, info); row.appendChild(left);
     const btns = document.createElement('div'); btns.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end';
     const mk = (label, action, primary) => { const b = document.createElement('button'); b.textContent = label; if (primary) b.className = 'primary';
       b.onclick = () => { if (action === 'delete' && !confirm(u.username + ' 계정을 삭제할까요?')) return;
